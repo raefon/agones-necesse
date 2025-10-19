@@ -20,6 +20,29 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Scrape latest download info
+        id: scrape
+        shell: bash
+        run: |
+          set -euo pipefail
+          page=$(curl -s https://necessegame.com/server/)
+          rel=$(echo "$page" | grep -Eo 'content/server/[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,2}-[0-9]+/necesse-server-linux64-[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,2}-[0-9]+\.zip' | head -n 1 || true)
+          if [[ -z "${rel}" ]]; then
+            echo "Could not find server download URL on necessegame.com/server/"
+            exit 1
+          fi
+          url="https://necessegame.com/${rel}"
+          fname=$(basename "$url")
+          # Strip prefix and suffix to get version-build, e.g. 1-0-1-20436084
+          vb=${fname#necesse-server-linux64-}
+          vb=${vb%.zip}
+          version=$(echo "$vb" | grep -Eo '^[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,2}')
+          build=$(echo "$vb" | grep -Eo '[0-9]+$')
+          echo "Found: url=$url, version=$version, build=$build"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
