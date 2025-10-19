@@ -5,7 +5,7 @@ LABEL maintainer="BrammyS <https://github.com/raefon>"
 LABEL org.label-schema.name="raefon/necesse-server"
 LABEL org.label-schema.description="A Docker image for a dedicated Necesse game server."
 LABEL org.label-schema.vendor="raefon"
-LABEL org.label-schema.url="https://github.com/BrammyS/necesse-docker-server"
+LABEL org.label-schema.url="https://github.com/raefon/agones-necesse"
 LABEL org.label-schema.docker.cmd="docker run -d -v /necesse/saves:/necesse/saves -p 14159:14159/udp -e PASSWORD=strong_pass -e PAUSE=1 --restart=always --name necesse-server raefon/necesse-server"
 
 # Misc configurations.
@@ -54,7 +54,7 @@ FROM base AS final
 # Move server files to generic necesse folder.
 COPY --from=build /necesse-server-${version}-${build} /necesse/
 
-COPY --from=wrapper_builder /wrapper /usr/local/bin/wrapper
+COPY --from=build /wrapper /usr/local/bin/wrapper
 
 WORKDIR /necesse
 
