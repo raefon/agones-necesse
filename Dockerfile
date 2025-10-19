@@ -1,62 +1,84 @@
-# Setup base image
-FROM alpine:3 AS base
+# syntax=docker/dockerfile:1
 
-LABEL maintainer="BrammyS <https://github.com/raefon>"
-LABEL org.label-schema.name="raefon/necesse-server"
-LABEL org.label-schema.description="A Docker image for a dedicated Necesse game server."
-LABEL org.label-schema.vendor="raefon"
-LABEL org.label-schema.url="https://github.com/raefon/agones-necesse"
-LABEL org.label-schema.docker.cmd="docker run -d -v /necesse/saves:/necesse/saves -p 14159:14159/udp -e PASSWORD=strong_pass -e PAUSE=1 --restart=always --name necesse-server raefon/necesse-server"
+  # Base runtime image
+  FROM alpine:3.20 AS base
 
-# Misc configurations.
-ARG version
-ARG build
-ARG url
-EXPOSE 14159/udp
-VOLUME  [                       \
-    "/necesse/logs",            \
-    "/necesse/saves"            \
-]
+  LABEL maintainer="BrammyS <https://github.com/raefon>"
+  LABEL org.label-schema.name="raefon/necesse-server"
+  LABEL org.label-schema.description="A Docker image for a dedicated Necesse game server."
+  LABEL org.label-schema.vendor="raefon"
+  LABEL org.label-schema.url="https://github.com/raefon/agones-necesse"
+  LABEL org.label-schema.docker.cmd="docker run -d -v /necesse/saves:/necesse/saves -p 14159:14159/udp -e PASSWORD=strong_pass -e PAUSE=1 --restart=always --name necesse-server raefon/necesse-server"
 
-# Server configs.
-ENV WORLD=world
-ENV SLOTS=10
-ENV OWNER=""
-ENV MOTD="This server is made possible by Docker!"
-ENV PASSWORD=""
-ENV PAUSE=0
-ENV GIVE_CLIENTS_POWER=1
-ENV LOGGING=1
-ENV ZIP=1
-ENV JVMARGS=""
+  # Expose UDP port and mount points
+  EXPOSE 14159/udp
+  VOLUME ["/necesse/logs", "/necesse/saves"]
 
-# Install java, wget and unzip and cleanup package cache.
-RUN apk --update add wget unzip 
-RUN apk add openjdk17
-RUN rm -rf /var/cache/apk/*
+  # Server configs (consider not baking sensitive defaults)
+  ENV WORLD=world \
+      SLOTS=10 \
+      OWNER="" \
+      MOTD="This server is made possible by Docker!" \
+      PASSWORD="" \
+      PAUSE=0 \
+      GIVE_CLIENTS_POWER=1 \
+      LOGGING=1 \
+      ZIP=1 \
+      JVMARGS=""
 
-# Setup build image
-FROM base AS build
+  # Runtime deps: JRE and certs
+  RUN apk add --no-cache \
+      openjdk17-jre-headless \
+      ca-certificates \
+      tzdata \
+      bash \
+    && update-ca-certificates
 
-# Install necesse server files.
-RUN wget ${url}
-RUN unzip necesse-server-linux64-${version}-${build}.zip
-RUN rm -rf ${dir}/jre
+  # Builder stage for Go wrapper and fetching Necesse server
+  FROM golang:1.22-alpine AS build
 
-COPY main.go go.mod ./
-RUN go mod download agones.dev/agones && \
-    go mod tidy && \
-    go build -o wrapper
+  ARG version
+  ARG build
+  ARG url
 
-# Setup final image
-FROM base AS final
+  WORKDIR /work
 
-# Move server files to generic necesse folder.
-COPY --from=build /necesse-server-${version}-${build} /necesse/
+  # Tools needed to fetch and extract, and to resolve Go modules
+  RUN apk add --no-cache ca-certificates wget unzip git \
+    && update-ca-certificates
 
-COPY --from=build /wrapper /usr/local/bin/wrapper
+  # Fail early if URL is missing
+  RUN test -n "$url" || (echo "Build arg 'url' is empty" && exit 1)
 
-WORKDIR /necesse
+  # Download Necesse server and extract to a known path
+  RUN wget -O necesse-server-linux64-${version}-${build}.zip "$url"
+  RUN mkdir -p /work/necesse && unzip -q necesse-server-linux64-${version}-${build}.zip -d /work/necesse
 
-ENTRYPOINT ["/usr/local/bin/wrapper", "-i", "/usr/local/bin/necesse.sh"]
-CMD ["-args", "-world ${WORLD} -slots ${SLOTS} -owner ${OWNER} -motd ${MOTD} -password ${PASSWORD} -pausewhenempty ${PAUSE} -giveclientspower ${GIVE_CLIENTS_POWER} -logging ${LOGGING} -zipsaves ${ZIP}"]
+  # Remove any bundled JRE to use the system JRE in the final image
+  RUN find /work/necesse -type d -name jre -prune -exec rm -rf {} +
+
+  # Build the Go wrapper
+  COPY go.mod ./
+  RUN go mod download
+  COPY main.go ./
+  RUN CGO_ENABLED=0 GOOS=linux go build -o /work/wrapper ./main.go
+
+  # Final image: copy server files and wrapper into runtime
+  FROM base AS final
+
+  # If you need build args here for labeling or paths, redeclare:
+  ARG version
+  ARG build
+
+  # Move server files and wrapper
+  COPY --from=build /work/necesse /necesse
+  COPY --from=build /work/wrapper /usr/local/bin/wrapper
+
+  WORKDIR /necesse
+
+  # Run the server via the wrapper; point to the script within /necesse
+  ENTRYPOINT ["/usr/local/bin/wrapper", "-i", "/necesse/necesse.sh"]
+
+  # Note: env vars in JSON-form CMD will not expand with an exec-form ENTRYPOINT.
+  # Ensure your wrapper expands these or switch to a shell-based entry.
+  CMD ["-args", "-world ${WORLD} -slots ${SLOTS} -owner ${OWNER} -motd ${MOTD} -password ${PASSWORD} -pausewhenempty ${PAUSE} -giveclientspower ${GIVE_CLIENTS_POWER} -logging ${LOGGING} -zipsaves ${ZIP}"]
