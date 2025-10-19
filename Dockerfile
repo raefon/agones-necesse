@@ -78,12 +78,13 @@ ARG build
 
 # Move server files and wrapper
 COPY --from=build /work/necesse /necesse
+COPY necesseserver.sh /necesse/necesseserrver.sh
 COPY --from=build /work/wrapper /usr/local/bin/wrapper
 
 WORKDIR /necesse
 
 # Run the server via the wrapper; point to the script within /necesse
-ENTRYPOINT ["/usr/local/bin/wrapper", "-i", "/necesse/necesse.sh"]
+ENTRYPOINT ["/usr/local/bin/wrapper", "-i", "/necesse/necesseserver.sh"]
 
 # Note: env vars in JSON-form CMD will not expand with an exec-form ENTRYPOINT.
 # Ensure your wrapper expands these or switch to a shell-based entry.
