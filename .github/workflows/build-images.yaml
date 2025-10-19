@@ -57,6 +57,28 @@ jobs:
       #     username: ${{ secrets.DOCKERHUB_USERNAME }}
       #     password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Check if image already exists
+        id: check
+        shell: bash
+        env:
+          VERSION: ${{ steps.scrape.outputs.version }}
+          BUILD: ${{ steps.scrape.outputs.build }}
+        run: |
+          set -euo pipefail
+          TAG="${VERSION}-${BUILD}"
+          if ! docker manifest inspect "${{ env.DOCKER_IMAGE }}:${TAG}" >/tmp/manifest.json 2>/dev/null; then
+            echo "Tag not found; will build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -q '"architecture":\s*"arm64"' /tmp/manifest.json && grep -q '"architecture":\s*"amd64"' /tmp/manifest.json; then
+            echo "Both amd64 and arm64 already present — skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Multi-arch not complete (will build/push for missing arch)."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -68,8 +90,17 @@ jobs:
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
+        if: steps.check.outputs.should_build == 'true'
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            url=${{ steps.scrape.outputs.url }}
+            version=${{ steps.scrape.outputs.version }}
+            build=${{ steps.scrape.outputs.build }}
+
+      - name: Done (no build necessary)
+        if: steps.check.outputs.should_build != 'true'
+        run: echo "Already up to date; no new server release detected."
