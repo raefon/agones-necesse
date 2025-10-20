@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: Force build even if tag already exists
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -12,6 +19,8 @@ permissions:
 env:
   # Used by the manifest-inspect check
   DOCKER_IMAGE: ghcr.io/${{ github.repository }}
+  # Expose manual input (as string) for conditions
+  FORCE_BUILD: ${{ inputs.force_build == true && 'true' || 'false' }}
 
 jobs:
   build-and-push:
@@ -96,7 +105,7 @@ jobs:
 
       - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
-        if: steps.check.outputs.should_build == 'true'
+        if: steps.check.outputs.should_build == 'true' || env.FORCE_BUILD == 'true'
         with:
           context: .
           push: true
@@ -111,5 +120,5 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Done (no build necessary)
-        if: steps.check.outputs.should_build != 'true'
+        if: steps.check.outputs.should_build != 'true' && env.FORCE_BUILD != 'true'
         run: echo "Already up to date; no new server release detected."
