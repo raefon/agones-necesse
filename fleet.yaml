@@ -15,7 +15,7 @@
 apiVersion: "agones.dev/v1"
 kind: Fleet
 metadata:
-  name: minetest
+  name: necesse-server
 spec:
   replicas: 2
   strategy:
@@ -24,15 +24,15 @@ spec:
     spec:
       ports:
       - name: default
-        containerPort: 30000
+        containerPort: 14159
       health:
         initialDelaySeconds: 30
         periodSeconds: 60
       template:
         spec:
           containers:
-          - name: minetest
-            image: paulhkim80/agones-example-minetest:5.9.0
+          - name: necesse-server
+            image: ghcr.io/raefon/agones-necesse:latest
             imagePullPolicy: Always # add for development
             resources:
               requests:

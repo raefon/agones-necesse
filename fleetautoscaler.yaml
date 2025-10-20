@@ -20,9 +20,9 @@
 apiVersion: "autoscaling.agones.dev/v1"
 kind: FleetAutoscaler
 metadata:
-  name: minetest-autoscaler
+  name: necesse-server-autoscaler
 spec:
-  fleetName: minetest
+  fleetName: necesse-server
   policy:
     type: Buffer
     buffer:

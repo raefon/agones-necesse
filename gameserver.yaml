@@ -15,7 +15,7 @@
 apiVersion: "agones.dev/v1"
 kind: GameServer
 metadata:
-  name: minetest
+  name: necesse-server
 spec:
   ports:
     - name: default
@@ -23,8 +23,8 @@ spec:
   template:
     spec:
       containers:
-      - name: minetest
-        image: paulhkim80/agones-example-minetest:5.9.0
+      - name: necesse-server
+        image: ghcr.io/raefon/agones-necesse:latest
         imagePullPolicy: Always # add for development
         resources:
           requests:

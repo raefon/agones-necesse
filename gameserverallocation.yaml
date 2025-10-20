@@ -15,8 +15,8 @@
 apiVersion: allocation.agones.dev/v1
 kind: GameServerAllocation
 metadata:
-  name: minetestallocation
+  name: necesse-server-allocation
 spec:
   selectors:
     - matchLabels:
-        agones.dev/fleet: minetest
+        agones.dev/fleet: necesse-server
