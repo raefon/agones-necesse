@@ -1,20 +1,7 @@
-// Copyright 2021 Google LLC All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -22,34 +9,30 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	sdk "agones.dev/agones/sdks/go"
 )
 
-type interceptor struct {
-	forward   io.Writer
-	intercept func(p []byte)
-}
-
-// Write will intercept the incoming stream, and forward
-// the contents to its `forward` Writer.
-func (i *interceptor) Write(p []byte) (n int, err error) {
-	if i.intercept != nil {
-		i.intercept(p)
-	}
-
-	return i.forward.Write(p)
-}
-
-// main intercepts the stdout of the necesse gameserver and uses it
-// to determine if the game server is ready or not.
+// main intercepts the stdout of the Necesse gameserver and uses it
+// to determine when the server is ready. We consider the server ready
+// once the line "Type help for list of commands." appears.
 func main() {
 	input := flag.String("i", "", "path to necesseserver.sh")
 	args := flag.String("args", "", "additional arguments to pass to the script")
 	flag.Parse()
 
-	argsList := strings.Split(strings.Trim(strings.TrimSpace(*args), "'"), " ")
+	if strings.TrimSpace(*input) == "" {
+		log.Fatal(">>> Missing -i path to necesseserver.sh")
+	}
+
+	// Parse -args into a slice; tolerate empty string and simple outer quotes.
+	var argsList []string
+	if trimmed := strings.TrimSpace(*args); trimmed != "" {
+		argsList = strings.Fields(strings.Trim(trimmed, "'"))
+	}
+
 	fmt.Println(">>> Connecting to Agones with the SDK")
 	s, err := sdk.NewSDK()
 	if err != nil {
@@ -62,42 +45,63 @@ func main() {
 	fmt.Println(">>> Starting wrapper for necesse!")
 	fmt.Printf(">>> Path to necesse server script: %s %v\n", *input, argsList)
 
-	// track references to listening count
-	listeningCount := 0
+	cmd := exec.Command(*input, argsList...) // #nosec G204
 
-	cmd := exec.Command(*input, argsList...) // #nosec
-	cmd.Stderr = &interceptor{forward: os.Stderr}
-	cmd.Stdout = &interceptor{
-		forward: os.Stdout,
-		intercept: func(p []byte) {
-			if listeningCount >= 1 {
-				return
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Fatalf(">>> Failed to get stdout pipe: %v", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		log.Fatalf(">>> Failed to get stderr pipe: %v", err)
+	}
+
+	// Ready once we see the help line.
+	const helpLine = "Type help for list of commands."
+
+	var once sync.Once
+	ready := func(trigger string) {
+		once.Do(func() {
+			fmt.Printf(">>> Moving to READY (trigger: %s)\n", trigger)
+			if err := s.Ready(); err != nil {
+				log.Fatalf(">>> Could not send ready message: %v", err)
 			}
+		})
+	}
 
-			str := strings.TrimSpace(string(p))
-			// necesse will say "Local address: 127.0.0.1:14159" when ready.
-			if count := strings.Count(str, "Local address: 127.0.0.1:14159"); count > 0 {
-				listeningCount += count
-				fmt.Printf(">>> Found 'listening' statement: %d \n", listeningCount)
+	// Forward stderr directly.
+	go func() {
+		if _, err := io.Copy(os.Stderr, stderr); err != nil && !isBenignPipeError(err) {
+			log.Printf(">>> STDERR copy error: %v", err)
+		}
+	}()
 
-				if listeningCount >= 1 {
-					fmt.Printf(">>> Moving to READY: %s \n", str)
-					err = s.Ready()
-					if err != nil {
-						log.Fatalf("Could not send ready message")
-					}
-				}
+	// Scan stdout line-by-line, forward, and detect readiness.
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		// If your server logs extremely long lines, you can increase the buffer:
+		// buf := make([]byte, 0, 256*1024)
+		// sc.Buffer(buf, 1024*1024)
+		for sc.Scan() {
+			line := sc.Text()
+			fmt.Fprintln(os.Stdout, line)
+			if strings.Contains(line, helpLine) {
+				ready("help-line")
 			}
-		}}
+		}
+		if err := sc.Err(); err != nil && !isBenignPipeError(err) {
+			log.Printf(">>> STDOUT scan error: %v", err)
+		}
+	}()
 
 	if err := cmd.Start(); err != nil {
-		log.Fatalf(">>> Error Starting Cmd %v", err)
+		log.Fatalf(">>> Error starting server script: %v", err)
 	}
 	err = cmd.Wait()
-	log.Fatal(">>> necesse shutdown unexpectantly", err)
+	log.Fatal(">>> necesse shutdown unexpectedly: ", err)
 }
 
-// doHealth sends the regular Health Pings
+// doHealth sends the regular Health pings.
 func doHealth(sdk *sdk.SDK) {
 	tick := time.Tick(2 * time.Second)
 	for {
@@ -106,4 +110,15 @@ func doHealth(sdk *sdk.SDK) {
 		}
 		<-tick
 	}
+}
+
+// isBenignPipeError filters common pipe/FD errors that occur on process exit.
+func isBenignPipeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "use of closed network connection") ||
+		strings.Contains(msg, "file already closed") ||
+		strings.Contains(msg, "broken pipe")
 }

@@ -1,20 +1,45 @@
-#!/bin/sh
+#!/usr/bin/env sh
+set -eu
 
-# Copyright 2021 Google LLC All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Change to the unpacked server directory
 cd /necesse/necesse-server* || exit 1
+
+# Default local directory for server data (can be overridden)
+LOCALDIR="${LOCALDIR:-.}"
+
+# If args were provided to this script, use them verbatim.
+# Otherwise, construct args from environment variables.
+if [ "$#" -eq 0 ]; then
+  # Start with required/commonly used flags
+  set -- -world "${WORLD:-world}" -slots "${SLOTS:-10}"
+
+  # Only include flags when values are provided
+  [ -n "${OWNER:-}" ] && set -- "$@" -owner "${OWNER}"
+  [ -n "${MOTD:-}" ] && set -- "$@" -motd "${MOTD}"
+  [ -n "${PASSWORD:-}" ] && set -- "$@" -password "${PASSWORD}"
+  [ -n "${PAUSE:-}" ] && set -- "$@" -pausewhenempty "${PAUSE}"
+  [ -n "${GIVE_CLIENTS_POWER:-}" ] && set -- "$@" -giveclientspower "${GIVE_CLIENTS_POWER}"
+  [ -n "${LOGGING:-}" ] && set -- "$@" -logging "${LOGGING}"
+  [ -n "${ZIP:-}" ] && set -- "$@" -zipsaves "${ZIP}"
+
+  # Optional: allow appending free-form flags via ARGS env (space-separated)
+  # Note: quoting inside ARGS won't be preserved by sh word-splitting.
+  if [ -n "${ARGS:-}" ]; then
+    # shellcheck disable=SC2086
+    set -- "$@" ${ARGS}
+  fi
+fi
+
+# JVM options (e.g., -Xms512m -Xmx2g), optional
+JVMARGS="${JVMARGS:-}"
+
+# Restart loop (kept from your original script)
 while true; do
-    java -jar Server.jar -nogui -localdir "$@" 2>&1
-    sleep 10
+  if [ -n "$JVMARGS" ]; then
+    # shellcheck disable=SC2086
+    java ${JVMARGS} -jar Server.jar -nogui -localdir "${LOCALDIR}" "$@" 2>&1
+  else
+    java -jar Server.jar -nogui -localdir "${LOCALDIR}" "$@" 2>&1
+  fi
+  sleep 10
 done
