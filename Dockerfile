@@ -81,6 +81,9 @@ COPY --from=build /work/necesse /necesse
 COPY necesseserver.sh /necesse/necesseserver.sh
 COPY --from=build /work/wrapper /usr/local/bin/wrapper
 
+# Chmod execute to necesseserver.sh
+RUN chmod +x /necesse/necesseserver.sh
+
 WORKDIR /necesse
 
 # Run the server via the wrapper; point to the script within /necesse
