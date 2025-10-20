@@ -2,7 +2,7 @@
 set -eu
 
 # Change to the unpacked server directory
-cd /necesse/necesse-server* || exit 1
+cd /necesse || exit 1
 
 # Default local directory for server data (can be overridden)
 LOCALDIR="${LOCALDIR:-.}"

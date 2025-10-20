@@ -52,7 +52,7 @@ RUN test -n "$url" || (echo "Build arg 'url' is empty" && exit 1)
 
 # Download Necesse server and extract to a known path
 RUN wget -O necesse-server-linux64-${version}-${build}.zip "$url"
-RUN mkdir -p /work/necesse && unzip -q necesse-server-linux64-${version}-${build}.zip -d /work/necesse
+RUN mkdir -p /work/necesse && unzip -q necesse-server-linux64-${version}-${build}.zip -d /work/necesse && mv /work/necesse/necesse-server* /work/necesse && rm -rf /work/necesse/necesse-server*
 
 # Remove any bundled JRE to use the system JRE in the final image
 RUN find /work/necesse -type d -name jre -prune -exec rm -rf {} +
