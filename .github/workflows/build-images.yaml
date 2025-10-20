@@ -9,6 +9,10 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # Used by the manifest-inspect check
+  DOCKER_IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -17,6 +21,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Register binfmt handlers so we can build arm64 on amd64 runners
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Create and use a Buildx builder instance
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -33,7 +42,6 @@ jobs:
           fi
           url="https://necessegame.com/${rel}"
           fname=$(basename "$url")
-          # Strip prefix and suffix to get version-build, e.g. 1-0-1-20436084
           vb=${fname#necesse-server-linux64-}
           vb=${vb%.zip}
           version=$(echo "$vb" | grep -Eo '^[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,2}')
@@ -50,13 +58,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # If you need to pull a private Docker Hub base image, uncomment and set secrets:
-      # - name: Log in to Docker Hub
-      #   uses: docker/login-action@v3
-      #   with:
-      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
-      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Check if image already exists
         id: check
         shell: bash
@@ -66,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${VERSION}-${BUILD}"
-          if ! docker manifest inspect "${{ env.DOCKER_IMAGE }}:${TAG}" >/tmp/manifest.json 2>/dev/null; then
+          if ! docker manifest inspect "${DOCKER_IMAGE}:${TAG}" >/tmp/manifest.json 2>/dev/null; then
             echo "Tag not found; will build."
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -86,20 +87,28 @@ jobs:
           images: |
             ghcr.io/${{ github.repository }}
           tags: |
+            # version-build (e.g., 1-0-1-20436084)
+            type=raw,value=${{ steps.scrape.outputs.version }}-${{ steps.scrape.outputs.build }}
+            # version only
+            type=raw,value=${{ steps.scrape.outputs.version }}
+            # latest only on default branch
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (multi-arch)
         uses: docker/build-push-action@v5
         if: steps.check.outputs.should_build == 'true'
         with:
           context: .
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             url=${{ steps.scrape.outputs.url }}
             version=${{ steps.scrape.outputs.version }}
             build=${{ steps.scrape.outputs.build }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Done (no build necessary)
         if: steps.check.outputs.should_build != 'true'
