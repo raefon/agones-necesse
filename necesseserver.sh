@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-cd /necesse || exit 1
+cd /necesse/necesse-server* || exit 1
 while true; do
     java -jar Server.jar -nogui -localdir "$@" 2>&1
     sleep 10

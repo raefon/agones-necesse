@@ -78,7 +78,7 @@ ARG build
 
 # Move server files and wrapper
 COPY --from=build /work/necesse /necesse
-COPY necesseserver.sh /necesse/necesseserrver.sh
+COPY necesseserver.sh /necesse/necesseserver.sh
 COPY --from=build /work/wrapper /usr/local/bin/wrapper
 
 WORKDIR /necesse
