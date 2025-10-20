@@ -3,9 +3,9 @@
 # Base runtime image
 FROM alpine:3.20 AS base
 
-LABEL maintainer="BrammyS <https://github.com/raefon>"
+LABEL maintainer="raefon <https://github.com/raefon>"
 LABEL org.label-schema.name="raefon/necesse-server"
-LABEL org.label-schema.description="A Docker image for a dedicated Necesse game server."
+LABEL org.label-schema.description="A Docker image for a dedicated Necesse game server for use with agones."
 LABEL org.label-schema.vendor="raefon"
 LABEL org.label-schema.url="https://github.com/raefon/agones-necesse"
 LABEL org.label-schema.docker.cmd="docker run -d -v /necesse/saves:/necesse/saves -p 14159:14159/udp -e PASSWORD=strong_pass -e PAUSE=1 --restart=always --name necesse-server raefon/necesse-server"
